@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -32,18 +33,6 @@ type Spark = {
   opacity: number;
 };
 
-type ScreenDot = {
-  id: string;
-  left: number;
-  top: number;
-  delay: number;
-  dur: number;
-  size: number;
-  opacity: number;
-  driftX: number;
-  driftY: number;
-};
-
 function toHalfWidthAlphaNum(str: string) {
   return (str ?? "").replace(/[０-９Ａ-Ｚａ-ｚ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
 }
@@ -66,7 +55,14 @@ function detectRank(benefitText: string, code?: string): FxKind {
   const t = normalizeTextForRank(benefitText ?? "");
   const raw = (code ?? "").toUpperCase();
 
-  if (t.startsWith("ss賞") || t.startsWith("ss:") || t.startsWith("ss：") || t.startsWith("ss-") || t.startsWith("ss_"))
+  // 1) benefit_text 先頭ラベル
+  if (
+    t.startsWith("ss賞") ||
+    t.startsWith("ss:") ||
+    t.startsWith("ss：") ||
+    t.startsWith("ss-") ||
+    t.startsWith("ss_")
+  )
     return "ss";
   if (t.startsWith("s賞") || t.startsWith("s:") || t.startsWith("s：") || t.startsWith("s-") || t.startsWith("s_"))
     return "s";
@@ -75,11 +71,13 @@ function detectRank(benefitText: string, code?: string): FxKind {
   if (t.startsWith("b賞") || t.startsWith("b:") || t.startsWith("b：") || t.startsWith("b-") || t.startsWith("b_"))
     return "b";
 
+  // 先頭じゃないけど入ってる（救済）
   if (t.includes("ss賞")) return "ss";
   if (t.includes("s賞")) return "s";
   if (t.includes("a賞")) return "a";
   if (t.includes("b賞")) return "b";
 
+  // 2) code 先頭で判定（保険）
   const codeCore = raw.match(/([A-Z0-9]{3,10})$/)?.[1] ?? raw.split("-").pop() ?? raw;
   const c = (codeCore ?? "").toUpperCase();
 
@@ -109,17 +107,15 @@ export default function Home() {
   const [spinValue, setSpinValue] = useState("----");
   const [showReveal, setShowReveal] = useState(false);
 
-  // ===== 枠内演出 =====
+  // 演出
   const [fx, setFx] = useState<FxKind>(null);
   const [fxKey, setFxKey] = useState(0);
   const [sparks, setSparks] = useState<Spark[]>([]);
   const fxTimerRef = useRef<number | null>(null);
 
-  // ===== 画面全体演出 =====
-  const [screenFx, setScreenFx] = useState<FxKind>(null);
-  const [screenKey, setScreenKey] = useState(0);
-  const [screenDots, setScreenDots] = useState<ScreenDot[]>([]);
-  const screenTimerRef = useRef<number | null>(null);
+  // 画面全体演出（SS/S）
+  const [screenFx, setScreenFx] = useState<null | "ss" | "s">(null);
+  const screenFxTimerRef = useRef<number | null>(null);
 
   const rank = useMemo(() => (result ? detectRank(result.benefit_text, result.code) : null), [result]);
 
@@ -130,40 +126,22 @@ export default function Home() {
   }, [isSpinning]);
 
   function startScreenFx(kind: FxKind) {
-    if (!kind) return;
-
-    const count = kind === "ss" ? 90 : kind === "s" ? 60 : kind === "a" ? 36 : 26;
-    const now = Date.now();
-
-    const dots: ScreenDot[] = Array.from({ length: count }).map((_, i) => {
-      const left = Math.random() * 100;
-      const top = Math.random() * 100;
-      const dur = 900 + Math.random() * (kind === "ss" ? 2600 : kind === "s" ? 1900 : kind === "a" ? 1500 : 1200);
-      const delay = Math.random() * (kind === "ss" ? 220 : kind === "s" ? 260 : 320);
-      const size = (kind === "ss" ? 2.2 : kind === "s" ? 2.0 : kind === "a" ? 1.8 : 1.6) + Math.random() * 4.2;
-      const opacity = 0.08 + Math.random() * (kind === "ss" ? 0.22 : kind === "s" ? 0.18 : 0.14);
-      const driftX = (Math.random() - 0.5) * (kind === "ss" ? 90 : kind === "s" ? 70 : 55);
-      const driftY = (Math.random() - 0.5) * (kind === "ss" ? 110 : kind === "s" ? 90 : 70);
-
-      return { id: `${now}-sd-${i}`, left, top, delay, dur, size, opacity, driftX, driftY };
-    });
+    if (kind !== "ss" && kind !== "s") return;
 
     setScreenFx(kind);
-    setScreenKey((k) => k + 1);
-    setScreenDots(dots);
+    if (screenFxTimerRef.current) window.clearTimeout(screenFxTimerRef.current);
 
-    if (screenTimerRef.current) window.clearTimeout(screenTimerRef.current);
-    screenTimerRef.current = window.setTimeout(() => {
+    const ms = kind === "ss" ? 2600 : 2000;
+    screenFxTimerRef.current = window.setTimeout(() => {
       setScreenFx(null);
-      setScreenDots([]);
-    }, kind === "ss" ? 5200 : kind === "s" ? 3800 : 2800);
+    }, ms);
   }
 
-  // ✅ SS豪華版：粒数/長さ/スケールを大幅UP
   function startFx(kind: FxKind) {
     if (!kind) return;
 
-    const count = kind === "ss" ? 88 : kind === "s" ? 38 : kind === "a" ? 18 : 12;
+    // SSをもっと豪華に
+    const count = kind === "ss" ? 70 : kind === "s" ? 44 : kind === "a" ? 20 : 14;
     const now = Date.now();
 
     const next: Spark[] = Array.from({ length: count }).map((_, i) => {
@@ -171,20 +149,11 @@ export default function Home() {
       const top = Math.random() * 100;
 
       const delay = Math.random() * (kind === "ss" ? 260 : kind === "s" ? 320 : 380);
+      const dur = 900 + Math.random() * (kind === "ss" ? 2200 : kind === "s" ? 1700 : kind === "a" ? 1200 : 1000);
 
-      const dur =
-        900 +
-        Math.random() *
-          (kind === "ss" ? 2400 : kind === "s" ? 1600 : kind === "a" ? 1100 : 900);
-
-      const scale =
-        0.55 +
-        Math.random() *
-          (kind === "ss" ? 2.15 : kind === "s" ? 1.35 : kind === "a" ? 0.95 : 0.8);
-
+      const scale = 0.55 + Math.random() * (kind === "ss" ? 2.15 : kind === "s" ? 1.55 : kind === "a" ? 1.05 : 0.9);
       const rot = Math.random() * 360;
-
-      const opacity = 0.18 + Math.random() * (kind === "ss" ? 0.55 : kind === "s" ? 0.34 : 0.22);
+      const opacity = 0.18 + Math.random() * (kind === "ss" ? 0.55 : kind === "s" ? 0.40 : 0.26);
 
       return { id: `${now}-${i}`, left, top, delay, dur, scale, rot, opacity };
     });
@@ -197,9 +166,10 @@ export default function Home() {
     fxTimerRef.current = window.setTimeout(() => {
       setFx(null);
       setSparks([]);
-    }, kind === "ss" ? 5200 : kind === "s" ? 3800 : 2800);
+    }, kind === "ss" ? 5200 : kind === "s" ? 4200 : 3000);
   }
 
+  // 結果を消さずに残数だけ更新
   async function checkTickets(opts?: { keepResult?: boolean }) {
     const keepResult = opts?.keepResult ?? false;
 
@@ -207,6 +177,9 @@ export default function Home() {
     if (!keepResult) {
       setResult(null);
       setShowReveal(false);
+      setFx(null);
+      setScreenFx(null);
+      setSparks([]);
     }
 
     const p = normalizePhone(phone);
@@ -244,6 +217,9 @@ export default function Home() {
     setIsSpinning(true);
     setResult(null);
     setShowReveal(false);
+    setFx(null);
+    setScreenFx(null);
+    setSparks([]);
 
     try {
       const res = await fetch("/api/draw", {
@@ -260,79 +236,35 @@ export default function Home() {
       }
 
       const kind = detectRank(json?.benefit_text ?? "", json?.code ?? "");
-      const suspense = kind === "ss" ? 1650 : kind === "s" ? 1200 : kind === "a" ? 850 : 720;
 
-      // ✅ 画面全体：SS/Sは“溜め”の時点から始める（激アツ）
-      if (kind === "ss" || kind === "s") {
-        setScreenFx(kind);
-      } else {
-        setScreenFx(null);
-      }
+      // ✅ SS/Sは少し溜める（激アツ）
+      const suspense = kind === "ss" ? 1900 : kind === "s" ? 1350 : kind === "a" ? 900 : 720;
 
       setTimeout(() => {
         setIsSpinning(false);
         setResult(json);
         setShowReveal(true);
 
-        // ✅ リザルト表示タイミングで、枠内＆画面全体を同時にド派手に
-        startFx(kind);
         startScreenFx(kind);
+        startFx(kind);
       }, suspense);
 
+      // 抽選権残数だけ更新（結果は保持）
       setTimeout(() => {
         checkTickets({ keepResult: true });
-      }, suspense + 350);
+      }, suspense + 420);
     } catch (e: any) {
       setIsSpinning(false);
       setMsg(`通信エラー: ${e?.message ?? "Failed to fetch"}`);
     }
   }
 
+  const screenFxClass =
+    screenFx === "ss" ? "screenFx screenFxSS" : screenFx === "s" ? "screenFx screenFxS" : "";
+
   return (
-    <main className={`wrap ${screenFx ? `wrapFx wrapFx-${screenFx}` : ""}`}>
-      {/* ✅ 画面全体演出レイヤー（固定・クリック透過） */}
-      {(isSpinning || screenFx) && (
-        <div className={`screenFx ${screenFx ? `screenFx-${screenFx}` : ""}`} aria-hidden="true">
-          <div className="screenVignette" />
-          <div className="screenSweep" />
-          <div className="screenFlash" />
-          <div className="screenDust" key={screenKey}>
-            {screenDots.map((d) => (
-              <span
-                key={d.id}
-                className="sd"
-                style={{
-                  left: `${d.left}%`,
-                  top: `${d.top}%`,
-                  width: `${d.size}px`,
-                  height: `${d.size}px`,
-                  opacity: d.opacity,
-                  animationDelay: `${d.delay}ms`,
-                  animationDuration: `${d.dur}ms`,
-                  transform: `translate(-50%, -50%)`,
-                  // driftはCSS変数で持たせる
-                  ["--dx" as any]: `${d.driftX}px`,
-                  ["--dy" as any]: `${d.driftY}px`,
-                }}
-              />
-            ))}
-          </div>
-
-          {/* SS専用：画面中央に“JACKPOT” & 大リング */}
-          {screenFx === "ss" && (
-            <>
-              <div className="screenJackpot">JACKPOT</div>
-              <div className="screenRing" />
-            </>
-          )}
-
-          {/* S専用：画面中央に“BIG WIN” */}
-          {screenFx === "s" && <div className="screenBigwin">BIG WIN</div>}
-        </div>
-      )}
-
+    <main className={`wrap ${screenFxClass}`}>
       <div className="bgOrnament" aria-hidden="true" />
-
       <div className="container">
         <header className="hero">
           <div className="brandRow">
@@ -357,7 +289,7 @@ export default function Home() {
               より一層サービス向上に努めてまいります。
             </p>
             <p>
-              これからも皆様に楽しんでいただける時間と空間をお届けできるよう精進してまいりますので、
+              ７年目も、皆様に楽しんでいただける時間と空間をお届けできるよう精進してまいりますので、
               今後とも当店をよろしくお願いいたします。
             </p>
             <p>皆様のご来店を心よりお待ちしております。</p>
@@ -379,23 +311,14 @@ export default function Home() {
           <div className="row">
             <div className="field">
               <div className="label">電話番号</div>
-              <input
-                className="input"
-                placeholder="090xxxxxxxx"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-              />
+              <input className="input" placeholder="090xxxxxxxx" value={phone} onChange={(e) => setPhone(e.target.value)} />
             </div>
 
             <button className="btn" onClick={() => checkTickets()} disabled={isSpinning}>
               抽選権を確認
             </button>
 
-            <button
-              className="btn primary"
-              onClick={drawKuji}
-              disabled={isSpinning || (tickets !== null && tickets <= 0)}
-            >
+            <button className="btn primary" onClick={drawKuji} disabled={isSpinning || (tickets !== null && tickets <= 0)}>
               {isSpinning ? "抽選中..." : "くじを引く"}
             </button>
           </div>
@@ -420,30 +343,7 @@ export default function Home() {
                     <div className="fxSweep" />
                     <div className="fxBadge">{fxLabel(fx)}</div>
 
-                    {fx === "ss" && (
-                      <>
-                        <div className="ssAura" />
-                        <div className="ssJackpot">JACKPOT</div>
-
-                        <div className="ssFireworks">
-                          {Array.from({ length: 6 }).map((_, i) => (
-                            <span
-                              key={`${fxKey}-fw-${i}`}
-                              className="fw"
-                              style={{
-                                left: `${10 + i * 14}%`,
-                                top: `${18 + (i % 2) * 14}%`,
-                                animationDelay: `${i * 90}ms`,
-                              }}
-                            />
-                          ))}
-                        </div>
-                      </>
-                    )}
-
-                    {(fx === "s" || fx === "ss") && (
-                      <div className={`starburst ${fx === "ss" ? "starburstSS" : ""}`} />
-                    )}
+                    {(fx === "s" || fx === "ss") && <div className={`starburst ${fx === "ss" ? "starburstSS" : ""}`} />}
 
                     <div className="fxSparks">
                       {sparks.map((s) => (
@@ -476,6 +376,8 @@ export default function Home() {
                         ))}
                       </div>
                     )}
+
+                    {fx === "ss" && <div className="crown" aria-hidden="true">★</div>}
                   </div>
                 )}
 
@@ -490,16 +392,19 @@ export default function Home() {
             </div>
 
             {showReveal && result && (
-              <div
-                className={`result ${
-                  rank === "ss" ? "resultSS" : rank === "s" ? "resultS" : rank === "a" ? "resultA" : "resultB"
-                }`}
-              >
+              <div className={`result ${rank === "ss" ? "resultSS" : rank === "s" ? "resultS" : rank === "a" ? "resultA" : "resultB"}`}>
                 <div className="resultLabel">今回の結果</div>
                 <div className="benefit">{result.benefit_text}</div>
 
                 <div className="rankRow">
                   <div className={`rankBadge rank-${rank ?? "b"}`}>{fxLabel(rank ?? "b")}</div>
+                </div>
+
+                <div className="noteBox">
+                  <div className="noteTitle">次回予約で伝える内容</div>
+                  <div className="noteText">
+                    周年コード：<b>{short(result.code)}</b>
+                  </div>
                 </div>
               </div>
             )}
@@ -573,181 +478,6 @@ export default function Home() {
           --b:#cbd5e1;
         }
 
-        /* ==========================
-           画面全体FX
-        ========================== */
-        .wrapFx{ animation: screenPulse 1200ms ease-in-out 1; }
-        .wrapFx-ss{ animation: screenPulseSS 1600ms ease-in-out 1; }
-        .wrapFx-s{ animation: screenPulseS 1400ms ease-in-out 1; }
-
-        @keyframes screenPulse{
-          0%{ filter: brightness(1) saturate(1); }
-          35%{ filter: brightness(1.06) saturate(1.06); }
-          100%{ filter: brightness(1) saturate(1); }
-        }
-        @keyframes screenPulseS{
-          0%{ filter: brightness(1) saturate(1); transform: translateZ(0); }
-          25%{ filter: brightness(1.09) saturate(1.10); transform: translateZ(0); }
-          55%{ filter: brightness(1.03) saturate(1.04); }
-          100%{ filter: brightness(1) saturate(1); }
-        }
-        @keyframes screenPulseSS{
-          0%{ filter: brightness(1) saturate(1); transform: translateZ(0); }
-          18%{ filter: brightness(1.16) saturate(1.22); }
-          40%{ filter: brightness(1.06) saturate(1.10); }
-          100%{ filter: brightness(1) saturate(1); }
-        }
-
-        .screenFx{
-          position: fixed;
-          inset: 0;
-          pointer-events: none;
-          z-index: 999;
-          overflow: hidden;
-        }
-
-        /* 暗くならないように“薄い”ビネット */
-        .screenVignette{
-          position:absolute;
-          inset:-30%;
-          background:
-            radial-gradient(circle at 50% 45%, rgba(255,255,255,0.00), rgba(0,0,0,0.10) 55%, rgba(0,0,0,0.18) 80%);
-          opacity: 0;
-          animation: vignette 1400ms ease-out 1 forwards;
-        }
-        @keyframes vignette{
-          0%{ opacity:0; transform: scale(0.98); }
-          20%{ opacity:0.85; }
-          100%{ opacity:0; transform: scale(1.06); }
-        }
-
-        /* 画面を横切るライトスイープ（高級感） */
-        .screenSweep{
-          position:absolute;
-          inset:-60%;
-          background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.18) 45%, transparent 85%);
-          transform: translateX(-120%);
-          opacity: 0;
-          animation: screenSweep 1400ms ease-out 1 forwards;
-          filter: blur(0.2px);
-        }
-        @keyframes screenSweep{
-          0%{ opacity:0; transform: translateX(-120%) rotate(8deg); }
-          12%{ opacity:0.90; }
-          100%{ opacity:0; transform: translateX(120%) rotate(8deg); }
-        }
-
-        /* フラッシュ（暗転防止：白寄り） */
-        .screenFlash{
-          position:absolute;
-          inset:0;
-          opacity:0;
-          background: radial-gradient(circle at 50% 45%, rgba(255,255,255,0.40), rgba(255,255,255,0.0) 60%);
-          animation: screenFlash 900ms ease-out 1 forwards;
-        }
-        @keyframes screenFlash{
-          0%{ opacity:0; }
-          16%{ opacity:0.95; }
-          45%{ opacity:0.18; }
-          100%{ opacity:0; }
-        }
-
-        /* 金粉/ダスト */
-        .screenDust{ position:absolute; inset:0; }
-        .sd{
-          position:absolute;
-          border-radius: 999px;
-          background:
-            radial-gradient(circle at 35% 35%, rgba(255,255,255,0.95), rgba(255,255,255,0) 60%),
-            radial-gradient(circle at 60% 55%, rgba(200,168,75,0.95), rgba(200,168,75,0) 65%);
-          animation-name: sdMove;
-          animation-timing-function: ease-out;
-          animation-fill-mode: forwards;
-          filter: blur(0.1px);
-        }
-        @keyframes sdMove{
-          0%{ transform: translate(-50%, -50%) scale(0.4); opacity:0; }
-          20%{ opacity:1; }
-          100%{ transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.7); opacity:0; }
-        }
-
-        /* SS：画面中央のJACKPOT */
-        .screenJackpot{
-          position:absolute;
-          left: 50%;
-          top: 46%;
-          transform: translate(-50%, -50%);
-          padding: 12px 18px;
-          border-radius: 999px;
-          font-weight: 1000;
-          letter-spacing: 0.24em;
-          font-size: 16px;
-          color: rgba(17,24,39,0.92);
-          background:
-            radial-gradient(circle at 25% 25%, rgba(255,255,255,0.96), rgba(255,255,255,0) 60%),
-            linear-gradient(135deg, rgba(255,247,214,0.98), rgba(200,168,75,0.98));
-          box-shadow:
-            0 22px 60px rgba(0,0,0,0.30),
-            0 0 70px rgba(200,168,75,0.28);
-          opacity:0;
-          animation: screenJackpot 1600ms ease-out 1 forwards;
-          text-transform: uppercase;
-          filter: drop-shadow(0 0 18px rgba(255,255,255,0.20));
-        }
-        @keyframes screenJackpot{
-          0%{ opacity:0; transform: translate(-50%, -50%) scale(0.72); filter: blur(1px); }
-          18%{ opacity:1; transform: translate(-50%, -50%) scale(1.06); filter: blur(0px); }
-          62%{ opacity:1; transform: translate(-50%, -50%) scale(1.00); }
-          100%{ opacity:0; transform: translate(-50%, -50%) scale(0.98); }
-        }
-
-        .screenRing{
-          position:absolute;
-          left:50%;
-          top:50%;
-          width: 44px;
-          height: 44px;
-          border-radius: 999px;
-          transform: translate(-50%, -50%);
-          border: 2px solid rgba(200,168,75,0.35);
-          box-shadow: 0 0 0 1px rgba(255,255,255,0.12) inset;
-          opacity:0;
-          animation: screenRing 1500ms ease-out 1 forwards;
-        }
-        @keyframes screenRing{
-          0%{ opacity:0; transform: translate(-50%, -50%) scale(0.4); }
-          18%{ opacity:0.75; }
-          100%{ opacity:0; transform: translate(-50%, -50%) scale(16); }
-        }
-
-        /* S：BIG WIN */
-        .screenBigwin{
-          position:absolute;
-          left: 50%;
-          top: 48%;
-          transform: translate(-50%, -50%);
-          padding: 10px 16px;
-          border-radius: 999px;
-          font-weight: 1000;
-          letter-spacing: 0.22em;
-          font-size: 14px;
-          color: rgba(17,24,39,0.92);
-          background: rgba(255,255,255,0.88);
-          border: 1px solid rgba(17,24,39,0.12);
-          box-shadow: 0 18px 44px rgba(0,0,0,0.18);
-          opacity:0;
-          animation: screenBigwin 1200ms ease-out 1 forwards;
-          text-transform: uppercase;
-        }
-        @keyframes screenBigwin{
-          0%{ opacity:0; transform: translate(-50%, -50%) scale(0.80); }
-          18%{ opacity:1; transform: translate(-50%, -50%) scale(1.05); }
-          100%{ opacity:0; transform: translate(-50%, -50%) scale(1.00); }
-        }
-
-        /* ==========================
-           既存の画面（明るめ高級）
-        ========================== */
         .wrap{
           min-height:100vh;
           color:var(--ink);
@@ -774,6 +504,43 @@ export default function Home() {
           padding: 44px 18px 76px;
           position:relative;
           z-index:2;
+        }
+
+        /* 画面全体演出（SS/S） */
+        .screenFx{
+          animation: screenPulse 700ms ease-out 1;
+        }
+        .screenFxSS::before,
+        .screenFxS::before{
+          content:"";
+          position:fixed;
+          inset:0;
+          pointer-events:none;
+          z-index:1;
+          opacity:0;
+          animation: screenFlash 900ms ease-out forwards;
+        }
+        .screenFxSS::before{
+          background:
+            radial-gradient(800px 500px at 50% 35%, rgba(200,168,75,0.38), transparent 65%),
+            radial-gradient(900px 650px at 30% 70%, rgba(255,255,255,0.18), transparent 60%),
+            radial-gradient(900px 650px at 70% 70%, rgba(255,255,255,0.18), transparent 60%);
+        }
+        .screenFxS::before{
+          background:
+            radial-gradient(800px 500px at 50% 35%, rgba(154,166,178,0.28), transparent 65%),
+            radial-gradient(900px 650px at 50% 75%, rgba(255,255,255,0.14), transparent 60%);
+        }
+        @keyframes screenFlash{
+          0%{ opacity:0; }
+          18%{ opacity:1; }
+          55%{ opacity:0.45; }
+          100%{ opacity:0; }
+        }
+        @keyframes screenPulse{
+          0%{ filter: saturate(1); }
+          35%{ filter: saturate(1.25) contrast(1.04); }
+          100%{ filter: saturate(1) contrast(1); }
         }
 
         .hero{ padding: 14px 6px 6px; }
@@ -954,53 +721,39 @@ export default function Home() {
           50%{ transform: rotate(0.4deg); }
           100%{ transform: rotate(-0.4deg); }
         }
-
-        .slotSS{
-          animation: slotHitSS 680ms ease-out 1, ssPulse 1600ms ease-in-out 2;
-          text-shadow: 0 0 18px rgba(255,255,255,0.35), 0 0 34px rgba(200,168,75,0.45);
-          box-shadow:
-            0 0 0 1px rgba(255,255,255,0.12) inset,
-            0 18px 44px rgba(0,0,0,0.55),
-            0 0 70px rgba(200,168,75,0.35);
-        }
-        .slotS{ animation: slotHitS 560ms ease-out 1; }
-
+        .slotSS{ animation: slotHitSS 760ms ease-out 1; }
+        .slotS{ animation: slotHitS 620ms ease-out 1; }
         @keyframes slotHitSS{
           0%{ transform: scale(1.00); }
-          18%{ transform: scale(1.02) rotate(-0.3deg); }
-          36%{ transform: scale(1.01) rotate(0.3deg); }
-          55%{ transform: scale(1.015) rotate(-0.2deg); }
+          18%{ transform: scale(1.03) rotate(-0.35deg); }
+          36%{ transform: scale(1.02) rotate(0.35deg); }
+          55%{ transform: scale(1.025) rotate(-0.22deg); }
           100%{ transform: scale(1.00) rotate(0deg); }
         }
         @keyframes slotHitS{
           0%{ transform: scale(1.00); }
-          25%{ transform: scale(1.015) rotate(-0.25deg); }
-          55%{ transform: scale(1.01) rotate(0.25deg); }
+          25%{ transform: scale(1.02) rotate(-0.28deg); }
+          55%{ transform: scale(1.015) rotate(0.28deg); }
           100%{ transform: scale(1.00) rotate(0deg); }
-        }
-        @keyframes ssPulse{
-          0%{ filter: brightness(1); transform: scale(1.00); }
-          40%{ filter: brightness(1.22); transform: scale(1.018); }
-          100%{ filter: brightness(1); transform: scale(1.00); }
         }
 
         .fx{ position:absolute; inset: 12px; pointer-events:none; z-index: 3; border-radius: 18px; overflow:hidden; }
         .fxFlash{ position:absolute; inset: 0; opacity: 0; animation: fxFlash 900ms ease-out forwards; }
         @keyframes fxFlash{
           0%{ opacity:0; }
-          16%{ opacity:0.85; }
+          16%{ opacity:0.90; }
           45%{ opacity:0.22; }
           100%{ opacity:0; }
         }
         .fxSweep{
           position:absolute; inset: 0; opacity: 0;
-          background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.78) 45%, transparent 85%);
+          background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.82) 45%, transparent 85%);
           transform: translateX(-120%);
           animation: sweep 1200ms ease-out forwards;
         }
         @keyframes sweep{
           0%{ opacity:0; transform: translateX(-120%); }
-          10%{ opacity:0.92; }
+          10%{ opacity:0.95; }
           100%{ opacity:0; transform: translateX(120%); }
         }
         .fxBadge{
@@ -1011,25 +764,26 @@ export default function Home() {
           border: 1px solid rgba(17,24,39,0.12);
           box-shadow: 0 12px 28px rgba(0,0,0,0.20);
         }
-        .fx-ss .fxFlash{ background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.56), rgba(200,168,75,0.42)); }
-        .fx-s  .fxFlash{ background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.50), rgba(154,166,178,0.36)); }
-        .fx-a  .fxFlash{ background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.46), rgba(215,196,139,0.32)); }
+        .fx-ss .fxFlash{ background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.62), rgba(200,168,75,0.56)); }
+        .fx-s  .fxFlash{ background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.55), rgba(154,166,178,0.44)); }
+        .fx-a  .fxFlash{ background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.46), rgba(215,196,139,0.34)); }
         .fx-b  .fxFlash{ background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.36), rgba(203,213,225,0.28)); }
 
         .fxSparks{ position:absolute; inset:0; }
         .spark{ position:absolute; animation-timing-function: ease-out; animation-fill-mode: forwards; filter: blur(0.2px); }
+
         .spark-ss{
-          width: 16px; height: 16px; border-radius: 999px;
+          width: 18px; height: 18px; border-radius: 999px;
           background:
-            radial-gradient(circle at 35% 35%, rgba(255,255,255,0.95), rgba(255,255,255,0) 60%),
-            radial-gradient(circle at 60% 55%, rgba(200,168,75,0.95), rgba(200,168,75,0) 65%);
+            radial-gradient(circle at 35% 35%, rgba(255,255,255,0.98), rgba(255,255,255,0) 60%),
+            radial-gradient(circle at 60% 55%, rgba(200,168,75,0.98), rgba(200,168,75,0) 65%);
           animation-name: sparkPop;
         }
         .spark-s{
-          width: 14px; height: 14px;
+          width: 15px; height: 15px;
           background:
-            radial-gradient(circle at 40% 35%, rgba(255,255,255,0.95), rgba(255,255,255,0) 60%),
-            radial-gradient(circle at 60% 55%, rgba(154,166,178,0.80), rgba(154,166,178,0) 70%);
+            radial-gradient(circle at 40% 35%, rgba(255,255,255,0.96), rgba(255,255,255,0) 60%),
+            radial-gradient(circle at 60% 55%, rgba(154,166,178,0.86), rgba(154,166,178,0) 70%);
           clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 92%, 50% 72%, 21% 92%, 32% 57%, 2% 35%, 39% 35%);
           animation-name: starPop;
         }
@@ -1048,14 +802,14 @@ export default function Home() {
           animation-name: softPop;
         }
         @keyframes sparkPop{
-          0%{ transform: translate(-50%, -50%) scale(0.2); opacity:0; }
-          20%{ opacity:1; }
-          100%{ transform: translate(-50%, -50%) scale(1.7); opacity:0; }
+          0%{ transform: translate(-50%, -50%) scale(0.15); opacity:0; }
+          18%{ opacity:1; }
+          100%{ transform: translate(-50%, -50%) scale(2.05); opacity:0; }
         }
         @keyframes starPop{
-          0%{ transform: translate(-50%, -50%) scale(0.2) rotate(0deg); opacity:0; }
-          25%{ opacity:1; }
-          100%{ transform: translate(-50%, -50%) scale(1.6) rotate(220deg); opacity:0; }
+          0%{ transform: translate(-50%, -50%) scale(0.15) rotate(0deg); opacity:0; }
+          22%{ opacity:1; }
+          100%{ transform: translate(-50%, -50%) scale(1.85) rotate(240deg); opacity:0; }
         }
         @keyframes softPop{
           0%{ transform: translate(-50%, -50%) scale(0.2); opacity:0; }
@@ -1065,7 +819,7 @@ export default function Home() {
 
         .starburst{
           position:absolute; left: 50%; top: 50%;
-          width: 380px; height: 380px;
+          width: 420px; height: 420px;
           transform: translate(-50%, -50%);
           border-radius: 999px;
           opacity: 0;
@@ -1079,107 +833,53 @@ export default function Home() {
               rgba(255,255,255,0) 72deg
             );
           filter: blur(0.9px);
-          animation: burst 1100ms ease-out forwards;
+          animation: burst 1150ms ease-out forwards;
         }
         .starburstSS{
           background:
             conic-gradient(
               from 0deg,
               rgba(255,255,255,0) 0deg,
-              rgba(200,168,75,0.36) 16deg,
+              rgba(200,168,75,0.42) 16deg,
               rgba(255,255,255,0) 32deg,
-              rgba(255,255,255,0.34) 52deg,
+              rgba(255,255,255,0.38) 52deg,
               rgba(255,255,255,0) 72deg
             );
         }
         @keyframes burst{
-          0%{ opacity:0; transform: translate(-50%, -50%) scale(0.7) rotate(0deg); }
-          20%{ opacity:0.56; }
-          100%{ opacity:0; transform: translate(-50%, -50%) scale(1.22) rotate(120deg); }
+          0%{ opacity:0; transform: translate(-50%, -50%) scale(0.65) rotate(0deg); }
+          20%{ opacity:0.62; }
+          100%{ opacity:0; transform: translate(-50%, -50%) scale(1.25) rotate(130deg); }
         }
 
         .confetti{ position:absolute; inset:0; overflow:hidden; }
         .conf{
           position:absolute; top: -12px;
-          width: 6px; height: 12px; border-radius: 2px;
-          background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(200,168,75,0.75));
+          width: 6px; height: 14px; border-radius: 2px;
+          background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(200,168,75,0.82));
           opacity: 0.0;
-          animation: fall 1750ms ease-in forwards;
+          animation: fall 1600ms ease-in forwards;
         }
         @keyframes fall{
           0%{ transform: translateY(0) rotate(0deg); opacity: 0; }
-          15%{ opacity: 0.95; }
-          100%{ transform: translateY(340px) rotate(320deg); opacity: 0; }
+          15%{ opacity: 0.98; }
+          100%{ transform: translateY(300px) rotate(320deg); opacity: 0; }
         }
 
-        .ssAura{
+        .crown{
           position:absolute;
-          inset:-20%;
-          background:
-            radial-gradient(circle at 50% 40%, rgba(200,168,75,0.30), transparent 55%),
-            radial-gradient(circle at 30% 25%, rgba(255,255,255,0.22), transparent 50%),
-            radial-gradient(circle at 70% 65%, rgba(255,255,255,0.18), transparent 55%);
-          filter: blur(2px);
-          animation: aura 1200ms ease-out 1 forwards;
-        }
-        @keyframes aura{
-          0%{ opacity:0; transform: scale(0.92); }
-          20%{ opacity:1; }
-          100%{ opacity:0; transform: scale(1.06); }
-        }
-
-        .ssJackpot{
-          position:absolute;
-          left: 50%;
-          top: 54%;
-          transform: translate(-50%, -50%);
-          padding: 10px 16px;
+          left: 16px;
+          top: 12px;
+          width: 34px;
+          height: 34px;
           border-radius: 999px;
-          font-weight: 1000;
-          letter-spacing: 0.22em;
-          font-size: 14px;
-          color: rgba(17,24,39,0.92);
-          background:
-            radial-gradient(circle at 25% 25%, rgba(255,255,255,0.96), rgba(255,255,255,0) 60%),
-            linear-gradient(135deg, rgba(255,247,214,0.98), rgba(200,168,75,0.98));
-          box-shadow:
-            0 18px 44px rgba(0,0,0,0.35),
-            0 0 40px rgba(200,168,75,0.28);
-          opacity: 0;
-          animation: jackpot 1200ms ease-out forwards;
-          text-transform: uppercase;
-        }
-        @keyframes jackpot{
-          0%{ opacity:0; transform: translate(-50%, -50%) scale(0.75); filter: blur(1px); }
-          18%{ opacity:1; transform: translate(-50%, -50%) scale(1.05); filter: blur(0px); }
-          60%{ opacity:1; transform: translate(-50%, -50%) scale(1.00); }
-          100%{ opacity:0; transform: translate(-50%, -50%) scale(0.98); }
-        }
-
-        .ssFireworks{ position:absolute; inset:0; pointer-events:none; }
-        .fw{
-          position:absolute;
-          width: 140px;
-          height: 140px;
-          border-radius: 999px;
-          transform: translate(-50%, -50%) scale(0.6);
-          opacity: 0;
-          background:
-            conic-gradient(
-              from 0deg,
-              rgba(255,255,255,0) 0deg,
-              rgba(255,255,255,0.35) 12deg,
-              rgba(255,255,255,0) 24deg,
-              rgba(200,168,75,0.35) 36deg,
-              rgba(255,255,255,0) 48deg
-            );
-          filter: blur(0.6px);
-          animation: fw 1400ms ease-out forwards;
-        }
-        @keyframes fw{
-          0%{ opacity:0; transform: translate(-50%, -50%) scale(0.35) rotate(0deg); }
-          18%{ opacity:0.85; }
-          100%{ opacity:0; transform: translate(-50%, -50%) scale(1.45) rotate(140deg); }
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          background: rgba(255,255,255,0.88);
+          border:1px solid rgba(255,255,255,0.20);
+          box-shadow: 0 10px 24px rgba(0,0,0,0.20);
+          font-weight: 900;
         }
 
         .result{
@@ -1189,7 +889,7 @@ export default function Home() {
           border-radius: 18px;
           background: rgba(255,255,255,0.92);
         }
-        .resultSS{ border-color: rgba(200,168,75,0.55); box-shadow: 0 0 0 4px rgba(200,168,75,0.14); }
+        .resultSS{ border-color: rgba(200,168,75,0.60); box-shadow: 0 0 0 4px rgba(200,168,75,0.16); }
         .resultS { border-color: rgba(154,166,178,0.55); box-shadow: 0 0 0 4px rgba(154,166,178,0.12); }
         .resultA { border-color: rgba(215,196,139,0.55); box-shadow: 0 0 0 4px rgba(215,196,139,0.12); }
         .resultB { border-color: rgba(203,213,225,0.70); }
@@ -1207,6 +907,20 @@ export default function Home() {
           border:1px solid rgba(17,24,39,0.12);
           background: rgba(255,255,255,0.92);
         }
+        .rank-ss{ border-color: rgba(200,168,75,0.60); }
+        .rank-s{ border-color: rgba(154,166,178,0.55); }
+        .rank-a{ border-color: rgba(215,196,139,0.55); }
+        .rank-b{ border-color: rgba(203,213,225,0.70); }
+
+        .noteBox{
+          margin-top: 12px;
+          padding: 12px;
+          border: 1px dashed rgba(17,24,39,0.18);
+          border-radius: 16px;
+          background: rgba(255,255,255,0.86);
+        }
+        .noteTitle{ font-size:12px; color:var(--muted); margin-bottom: 6px; }
+        .noteText{ font-size:14px; color:var(--ink); }
 
         .sectionHead{
           display:flex;
