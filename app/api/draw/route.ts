@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+function getAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const admin = createClient(supabaseUrl, serviceKey, {
-  auth: { persistSession: false },
-});
+  if (!supabaseUrl || !serviceKey) {
+    throw new Error(
+      `Missing env. URL=${!!supabaseUrl} SERVICE=${!!serviceKey} (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)`
+    );
+  }
+
+  return createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false },
+  });
+}
 
 function normalizePhone(input: string) {
   return (input ?? "").replace(/[^\d]/g, "");
@@ -15,9 +23,9 @@ function normalizePhone(input: string) {
 // ====== ★確率設定：SSは 1/1000（0.1%） ======
 const WEIGHTS = {
   ss: 0.001, // 0.1% = 1/1000（「800〜1200本に1本」の中間で運用しやすい）
-  s: 0.015,  // 1.5%（ここは好みで調整OK）
-  a: 0.12,   // 12%（ここも好みで調整OK）
-  b: 0.864,  // 残り（合計1.0になるように）
+  s: 0.015, // 1.5%（ここは好みで調整OK）
+  a: 0.12, // 12%（ここも好みで調整OK）
+  b: 0.864, // 残り（合計1.0になるように）
 } as const;
 
 type Rank = "ss" | "s" | "a" | "b";
@@ -48,7 +56,10 @@ function fallbackOrder(rank: Rank): Rank[] {
   return ["b"];
 }
 
-async function pickOneUnusedCodeByRank(rank: Rank) {
+async function pickOneUnusedCodeByRank(
+  admin: ReturnType<typeof createClient>,
+  rank: Rank
+) {
   const prefix = rankToPrefix(rank);
 
   const { data, error } = await admin
@@ -67,11 +78,16 @@ async function pickOneUnusedCodeByRank(rank: Rank) {
 
 export async function POST(req: Request) {
   try {
+    const admin = getAdmin(); // ★ここで初めて env を読む（ビルド時に死なない）
+
     const body = await req.json().catch(() => ({}));
     const phone = normalizePhone(body?.phone);
 
     if (!phone) {
-      return NextResponse.json({ error: "電話番号を入力してください" }, { status: 400 });
+      return NextResponse.json(
+        { error: "電話番号を入力してください" },
+        { status: 400 }
+      );
     }
 
     const nowIso = new Date().toISOString();
@@ -88,6 +104,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (tErr) throw tErr;
+
     if (!ticket?.id) {
       return NextResponse.json(
         { error: "抽選権がありません（期限切れの可能性もあります）" },
@@ -102,7 +119,7 @@ export async function POST(req: Request) {
     let chosen: { code: string; benefit_text: string } | null = null;
 
     for (const r of fallbackOrder(wanted)) {
-      const one = await pickOneUnusedCodeByRank(r);
+      const one = await pickOneUnusedCodeByRank(admin, r);
       if (one) {
         chosen = one;
         break;
