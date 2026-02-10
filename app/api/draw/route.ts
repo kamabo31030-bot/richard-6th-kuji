@@ -1,20 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-function getAdmin() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceKey) {
-    throw new Error(
-      `Missing env. URL=${!!supabaseUrl} SERVICE=${!!serviceKey} (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)`
-    );
-  }
-
-  return createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false },
-  });
-}
+type Rank = "ss" | "s" | "a" | "b";
 
 function normalizePhone(input: string) {
   return (input ?? "").replace(/[^\d]/g, "");
@@ -22,13 +9,11 @@ function normalizePhone(input: string) {
 
 // ====== ★確率設定：SSは 1/1000（0.1%） ======
 const WEIGHTS = {
-  ss: 0.001, // 0.1% = 1/1000（「800〜1200本に1本」の中間で運用しやすい）
-  s: 0.015, // 1.5%（ここは好みで調整OK）
-  a: 0.12, // 12%（ここも好みで調整OK）
-  b: 0.864, // 残り（合計1.0になるように）
+  ss: 0.001,
+  s: 0.015,
+  a: 0.12,
+  b: 0.864,
 } as const;
-
-type Rank = "ss" | "s" | "a" | "b";
 
 function pickRankByWeights(): Rank {
   const r = Math.random();
@@ -56,13 +41,14 @@ function fallbackOrder(rank: Rank): Rank[] {
   return ["b"];
 }
 
-async function pickOneUnusedCodeByRank(
-  admin: ReturnType<typeof createClient>,
-  rank: Rank
-) {
+/**
+ * ★ここがポイント：
+ * SupabaseClient の型指定で揉めるので、client引数は any にする（ビルド最優先）
+ */
+async function pickOneUnusedCodeByRank(client: any, rank: Rank) {
   const prefix = rankToPrefix(rank);
 
-  const { data, error } = await admin
+  const { data, error } = await client
     .from("prize_codes")
     .select("code, benefit_text")
     .eq("status", "unused")
@@ -78,17 +64,27 @@ async function pickOneUnusedCodeByRank(
 
 export async function POST(req: Request) {
   try {
-    const admin = getAdmin(); // ★ここで初めて env を読む（ビルド時に死なない）
-
     const body = await req.json().catch(() => ({}));
     const phone = normalizePhone(body?.phone);
 
     if (!phone) {
+      return NextResponse.json({ error: "電話番号を入力してください" }, { status: 400 });
+    }
+
+    // ★POSTのたびにadmin clientを作る（env未設定でもビルド時に即死しにくい）
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceKey) {
       return NextResponse.json(
-        { error: "電話番号を入力してください" },
-        { status: 400 }
+        { error: "サーバー設定エラー（SUPABASEの環境変数が未設定）" },
+        { status: 500 }
       );
     }
+
+    const admin = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false },
+    });
 
     const nowIso = new Date().toISOString();
 
@@ -104,7 +100,6 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (tErr) throw tErr;
-
     if (!ticket?.id) {
       return NextResponse.json(
         { error: "抽選権がありません（期限切れの可能性もあります）" },
@@ -112,7 +107,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2) まず確率で狙う賞を決める（SSは1/1000）
+    // 2) 確率で狙う賞を決める
     const wanted = pickRankByWeights();
 
     // 3) 在庫切れなら下位へ落とす
@@ -133,7 +128,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 4) コードを割り当て → 抽選権を使用済み
+    // 4) コードを割り当て → 抽選権を使用済みに
     const { error: uErr } = await admin
       .from("prize_codes")
       .update({
@@ -159,9 +154,6 @@ export async function POST(req: Request) {
       benefit_text: chosen.benefit_text,
     });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message ?? "サーバーエラー" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message ?? "サーバーエラー" }, { status: 500 });
   }
 }
