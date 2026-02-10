@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -271,26 +270,27 @@ export default function Home() {
             <div className="mark" aria-hidden="true" />
             <div>
               <div className="brand">Richard 上越</div>
-              <div className="sub">6th Anniversary Lucky Draw</div>
+              <div className="sub">ANNIVERSARY EVENT</div>
             </div>
             <div className="chip">3月限定</div>
           </div>
 
-          <h1 className="title">6周年くじ</h1>
+          <h1 className="title">周年イベントくじ</h1>
+          <div className="annivCatch">いつもより、ちょっと豪華に。周年イベント開催中。</div>
 
           <section className="greeting" aria-label="挨拶文">
             <p>いつも Richard 上越 をご利用いただき、誠にありがとうございます。</p>
             <p>
-              おかげさまで当店は、このたび６周年を迎えることができました。これも日頃よりご来店くださるお客様、
-              そして支えてくださる皆様のおかげと、心より感謝申し上げます。
+              日頃よりご来店くださるお客様、そして支えてくださる皆様のおかげで、
+              当店は今年も周年の節目を迎えることができました。心より感謝申し上げます。
             </p>
             <p>
-              これからも「また来たい」と思っていただけるお店であり続けられるよう、キャスト・スタッフ一同、
-              より一層サービス向上に努めてまいります。
+              ささやかではございますが、感謝の気持ちを込めて「周年イベントくじ」をご用意しました。
+              ぜひこの機会に、いつもより少し特別な時間をお楽しみください。
             </p>
             <p>
-              ７年目も、皆様に楽しんでいただける時間と空間をお届けできるよう精進してまいりますので、
-              今後とも当店をよろしくお願いいたします。
+              これからも「また来たい」と思っていただけるお店であり続けられるよう、
+              キャスト・スタッフ一同、より一層サービス向上に努めてまいります。
             </p>
             <p>皆様のご来店を心よりお待ちしております。</p>
           </section>
@@ -565,6 +565,14 @@ export default function Home() {
           color:#374151;
         }
         .title{ margin: 16px 0 10px; font-size: 36px; letter-spacing: -0.03em; line-height:1.1; }
+
+        /* ✅ 追加：周年イベント用サブキャッチ */
+        .annivCatch{
+          margin-top: 2px;
+          font-size:13px;
+          letter-spacing:0.10em;
+          color: var(--muted);
+        }
 
         .greeting{ margin-top: 8px; max-width: 860px; }
         .greeting p{ margin: 0 0 10px; color:#374151; line-height: 2.05; font-size: 14px; }
