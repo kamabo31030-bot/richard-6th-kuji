@@ -231,7 +231,7 @@ export default function Home() {
 
       if (!res.ok) {
         setIsSpinning(false);
-        return setMsg(json?.error ?? "抽選に失敗しました");
+        return setMsg("現在くじの準備中です。スタッフへお声がけください。");
       }
 
       const kind = detectRank(json?.benefit_text ?? "", json?.code ?? "");
