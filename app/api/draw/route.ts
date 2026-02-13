@@ -1,19 +1,18 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-type Rank = "ss" | "s" | "a" | "b";
-
 function normalizePhone(input: string) {
   return (input ?? "").replace(/[^\d]/g, "");
 }
 
-// ====== ★確率設定：SSは 1/1000（0.1%） ======
 const WEIGHTS = {
   ss: 0.001,
   s: 0.015,
   a: 0.12,
   b: 0.864,
 } as const;
+
+type Rank = "ss" | "s" | "a" | "b";
 
 function pickRankByWeights(): Rank {
   const r = Math.random();
@@ -27,13 +26,6 @@ function pickRankByWeights(): Rank {
   return "b";
 }
 
-function rankToPrefix(rank: Rank) {
-  if (rank === "ss") return "SS賞";
-  if (rank === "s") return "S賞";
-  if (rank === "a") return "A賞";
-  return "B賞";
-}
-
 function fallbackOrder(rank: Rank): Rank[] {
   if (rank === "ss") return ["ss", "s", "a", "b"];
   if (rank === "s") return ["s", "a", "b"];
@@ -41,54 +33,48 @@ function fallbackOrder(rank: Rank): Rank[] {
   return ["b"];
 }
 
-/**
- * ★ここがポイント：
- * SupabaseClient の型指定で揉めるので、client引数は any にする（ビルド最優先）
- */
-async function pickOneUnusedCodeByRank(client: any, rank: Rank) {
-  const prefix = rankToPrefix(rank);
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-  const { data, error } = await client
+  return createClient(url, key, {
+    auth: { persistSession: false },
+  });
+}
+
+// ✅ rank列で直接取る（これが今回の修正）
+async function pickOneUnusedCodeByRank(admin: any, rank: Rank) {
+  const { data, error } = await admin
     .from("prize_codes")
     .select("code, benefit_text")
     .eq("status", "unused")
-    .ilike("benefit_text", `${prefix}%`)
-    .limit(30);
+    .eq("rank", rank)
+    .limit(50);
 
   if (error) throw error;
   if (!data || data.length === 0) return null;
 
   const idx = Math.floor(Math.random() * data.length);
-  return data[idx] as { code: string; benefit_text: string };
+  return data[idx];
 }
 
 export async function POST(req: Request) {
   try {
+    const admin = getAdminClient();
+
     const body = await req.json().catch(() => ({}));
     const phone = normalizePhone(body?.phone);
 
     if (!phone) {
-      return NextResponse.json({ error: "電話番号を入力してください" }, { status: 400 });
-    }
-
-    // ★POSTのたびにadmin clientを作る（env未設定でもビルド時に即死しにくい）
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !serviceKey) {
       return NextResponse.json(
-        { error: "サーバー設定エラー（SUPABASEの環境変数が未設定）" },
-        { status: 500 }
+        { error: "電話番号を入力してください" },
+        { status: 400 }
       );
     }
 
-    const admin = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false },
-    });
-
     const nowIso = new Date().toISOString();
 
-    // 1) 抽選権を1枚確保
+    // 抽選権取得
     const { data: ticket, error: tErr } = await admin
       .from("draw_tickets")
       .select("id")
@@ -100,18 +86,18 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (tErr) throw tErr;
+
     if (!ticket?.id) {
       return NextResponse.json(
-        { error: "抽選権がありません（期限切れの可能性もあります）" },
+        { error: "抽選権がありません" },
         { status: 400 }
       );
     }
 
-    // 2) 確率で狙う賞を決める
+    // 確率抽選
     const wanted = pickRankByWeights();
 
-    // 3) 在庫切れなら下位へ落とす
-    let chosen: { code: string; benefit_text: string } | null = null;
+    let chosen: any = null;
 
     for (const r of fallbackOrder(wanted)) {
       const one = await pickOneUnusedCodeByRank(admin, r);
@@ -123,12 +109,12 @@ export async function POST(req: Request) {
 
     if (!chosen) {
       return NextResponse.json(
-        { error: "景品コード在庫がありません（未使用が0件）" },
+        { error: "現在くじの準備中です。スタッフへお声がけください。" },
         { status: 400 }
       );
     }
 
-    // 4) コードを割り当て → 抽選権を使用済みに
+    // コード使用
     const { error: uErr } = await admin
       .from("prize_codes")
       .update({
@@ -141,6 +127,7 @@ export async function POST(req: Request) {
 
     if (uErr) throw uErr;
 
+    // チケット消費
     const { error: useErr } = await admin
       .from("draw_tickets")
       .update({ status: "used", used_at: nowIso })
@@ -154,6 +141,9 @@ export async function POST(req: Request) {
       benefit_text: chosen.benefit_text,
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "サーバーエラー" }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message ?? "サーバーエラー" },
+      { status: 500 }
+    );
   }
 }
