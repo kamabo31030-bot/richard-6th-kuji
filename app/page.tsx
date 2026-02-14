@@ -118,6 +118,17 @@ export default function Home() {
 
   const rank = useMemo(() => (result ? detectRank(result.benefit_text, result.code) : null), [result]);
 
+  // ✅ 客ページで表示する「景品一覧」
+  const prizeList = useMemo(
+    () => [
+      { rank: "ss" as const, title: "SS賞", value: "5000円割引", sub: "他割引との併用可" },
+      { rank: "s" as const, title: "S賞", value: "3000円割引", sub: "" },
+      { rank: "a" as const, title: "A賞", value: "2000円割引", sub: "" },
+      { rank: "b" as const, title: "B賞", value: "1000円割引", sub: "他割引との併用可" },
+    ],
+    []
+  );
+
   useEffect(() => {
     if (!isSpinning) return;
     const id = setInterval(() => setSpinValue(spinText()), 60);
@@ -152,7 +163,7 @@ export default function Home() {
 
       const scale = 0.55 + Math.random() * (kind === "ss" ? 2.15 : kind === "s" ? 1.55 : kind === "a" ? 1.05 : 0.9);
       const rot = Math.random() * 360;
-      const opacity = 0.18 + Math.random() * (kind === "ss" ? 0.55 : kind === "s" ? 0.40 : 0.26);
+      const opacity = 0.18 + Math.random() * (kind === "ss" ? 0.55 : kind === "s" ? 0.4 : 0.26);
 
       return { id: `${now}-${i}`, left, top, delay, dur, scale, rot, opacity };
     });
@@ -258,8 +269,7 @@ export default function Home() {
     }
   }
 
-  const screenFxClass =
-    screenFx === "ss" ? "screenFx screenFxSS" : screenFx === "s" ? "screenFx screenFxS" : "";
+  const screenFxClass = screenFx === "ss" ? "screenFx screenFxSS" : screenFx === "s" ? "screenFx screenFxS" : "";
 
   return (
     <main className={`wrap ${screenFxClass}`}>
@@ -306,6 +316,26 @@ export default function Home() {
             </ol>
           </section>
         </header>
+
+        {/* ✅ 景品一覧（客ページ用） */}
+        <section className="card prizeCard" aria-label="景品一覧">
+          <div className="sectionHead">
+            <h2 className="h2">景品一覧</h2>
+            <div className="sectionHint">有効期限：次回以降〜4月末まで</div>
+          </div>
+
+          <div className="prizeGrid">
+            {prizeList.map((p) => (
+              <div key={p.rank} className={`prizeItem prize-${p.rank}`}>
+                <div className="prizeTop">
+                  <div className={`prizeRank badge-${p.rank}`}>{p.title}</div>
+                  {p.sub ? <div className="prizeSub">{p.sub}</div> : <div className="prizeSub mutedSub">　</div>}
+                </div>
+                <div className="prizeValue">{p.value}</div>
+              </div>
+            ))}
+          </div>
+        </section>
 
         <section className="card glass">
           <div className="row">
@@ -566,7 +596,6 @@ export default function Home() {
         }
         .title{ margin: 16px 0 10px; font-size: 36px; letter-spacing: -0.03em; line-height:1.1; }
 
-        /* ✅ 追加：周年イベント用サブキャッチ */
         .annivCatch{
           margin-top: 2px;
           font-size:13px;
@@ -609,6 +638,65 @@ export default function Home() {
           margin-top: 14px;
         }
         .glass{ background: var(--glass); backdrop-filter: blur(10px); }
+
+        /* ✅ 景品一覧 */
+        .prizeCard{ background: rgba(255,255,255,0.92); }
+        .prizeGrid{
+          display:grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 10px;
+          margin-top: 8px;
+        }
+        @media (max-width: 900px){
+          .prizeGrid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        .prizeItem{
+          border:1px solid var(--line);
+          border-radius: 16px;
+          background: rgba(255,255,255,0.92);
+          box-shadow: 0 14px 30px rgba(17,24,39,0.06);
+          padding: 12px 12px 10px;
+          min-height: 92px;
+          display:flex;
+          flex-direction: column;
+          justify-content: space-between;
+        }
+        .prizeTop{
+          display:flex;
+          align-items:center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+        .prizeRank{
+          font-weight: 900;
+          letter-spacing: 0.06em;
+          font-size: 12px;
+          padding: 6px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(17,24,39,0.14);
+          background: rgba(255,255,255,0.92);
+          white-space: nowrap;
+        }
+        .badge-ss{ border-color: rgba(200,168,75,0.65); }
+        .badge-s{ border-color: rgba(154,166,178,0.60); }
+        .badge-a{ border-color: rgba(215,196,139,0.60); }
+        .badge-b{ border-color: rgba(203,213,225,0.75); }
+
+        .prizeSub{
+          font-size: 11px;
+          color: #374151;
+          opacity: 0.9;
+          text-align: right;
+          white-space: nowrap;
+        }
+        .mutedSub{ color: transparent; } /* 高さ合わせ */
+        .prizeValue{
+          margin-top: 8px;
+          font-size: 18px;
+          font-weight: 900;
+          letter-spacing: -0.01em;
+          color: var(--ink);
+        }
 
         .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
         .field{ min-width: 260px; }
@@ -939,7 +1027,7 @@ export default function Home() {
           margin-bottom: 10px;
         }
         .h2{ margin:0; font-size:16px; letter-spacing:-0.01em; }
-        .sectionHint{ font-size:12px; color:var(--muted); letter-spacing:0.10em; }
+        .sectionHint{ font-size:12px; color:var(--muted); letter-spacing:0.02em; }
         .muted{ margin:0; color:var(--muted); font-size:14px; }
 
         .codeNotice{
