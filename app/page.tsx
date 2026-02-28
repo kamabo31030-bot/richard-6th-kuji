@@ -121,10 +121,10 @@ export default function Home() {
   // ✅ 客ページで表示する「景品一覧」
   const prizeList = useMemo(
     () => [
-      { rank: "ss" as const, title: "SS賞", value: "5000円割引", sub: "他割引との併用可" },
+      { rank: "ss" as const, title: "SS賞", value: "5000円割引", sub: "" }, // ← 併用可を削除
       { rank: "s" as const, title: "S賞", value: "3000円割引", sub: "" },
       { rank: "a" as const, title: "A賞", value: "2000円割引", sub: "" },
-      { rank: "b" as const, title: "B賞", value: "1000円割引", sub: "他割引との併用可" },
+      { rank: "b" as const, title: "B賞", value: "1000円割引", sub: "" }, // ← 併用可を削除
     ],
     []
   );
