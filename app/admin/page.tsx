@@ -48,6 +48,14 @@ type LogSummary = {
   total: number;
 };
 
+type BulkRow = {
+  raw: string;
+  phone: string | null;
+  ok: boolean;
+  message: string;
+  count: number | null;
+};
+
 export default function AdminPage() {
   // 合言葉
   const [secret, setSecret] = useState("");
@@ -65,6 +73,11 @@ export default function AdminPage() {
   const [phone, setPhone] = useState("");
   const [ticketBusy, setTicketBusy] = useState(false);
   const [ticketCountNow, setTicketCountNow] = useState<number | null>(null);
+
+  // ✅ 一括付与（テキストエリア）
+  const [bulkText, setBulkText] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
 
   // ユーザー検索（電話 or コード）
   const [query, setQuery] = useState("");
@@ -291,6 +304,126 @@ export default function AdminPage() {
     }
   }
 
+  // ===== ✅ 一括付与（+1）=====
+  function parseBulkPhones(text: string): { raw: string; phone: string | null }[] {
+    const lines = String(text ?? "")
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    return lines.map((raw) => {
+      // 行の中に余計な文字があっても、数字だけ拾う
+      const p = normalizePhone(raw);
+      return { raw, phone: p ? p : null };
+    });
+  }
+
+  async function grantOneTicket(p: string): Promise<{ ok: boolean; message: string; count: number | null }> {
+    // 付与
+    const res = await fetch("/api/admin/add-ticket", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret, phone: p }),
+    });
+
+    const json = await safeJson(res);
+    if (!res.ok) return { ok: false, message: String(json?.error ?? "付与に失敗しました"), count: null };
+
+    // 残数（抽選可能回数）
+    try {
+      const res2 = await fetch("/api/admin/ticket-count", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret, phone: p }),
+      });
+      const json2 = await safeJson(res2);
+      if (!res2.ok) return { ok: true, message: "付与OK（残数取得失敗）", count: null };
+      return { ok: true, message: "付与OK", count: Number(json2?.count ?? 0) };
+    } catch {
+      return { ok: true, message: "付与OK（残数取得失敗）", count: null };
+    }
+  }
+
+  async function bulkAddTickets() {
+    setMsg("");
+    if (!canOperate) return setMsg("管理用合言葉を入力してください");
+
+    const parsed = parseBulkPhones(bulkText);
+    if (parsed.length === 0) return setMsg("一括付与の欄に電話番号を入力してください（1行1番号）");
+
+    setBulkBusy(true);
+    setBulkRows([]);
+
+    try {
+      const seen = new Set<string>();
+      const results: BulkRow[] = [];
+
+      for (const item of parsed) {
+        // 入力不正
+        if (!item.phone) {
+          results.push({
+            raw: item.raw,
+            phone: null,
+            ok: false,
+            message: "電話番号が判定できません",
+            count: null,
+          });
+          setBulkRows([...results]);
+          continue;
+        }
+
+        // 重複
+        if (seen.has(item.phone)) {
+          results.push({
+            raw: item.raw,
+            phone: item.phone,
+            ok: false,
+            message: "同じ番号が重複しています",
+            count: null,
+          });
+          setBulkRows([...results]);
+          continue;
+        }
+        seen.add(item.phone);
+
+        // 付与実行（1件ずつ確実に）
+        try {
+          const r = await grantOneTicket(item.phone);
+          results.push({
+            raw: item.raw,
+            phone: item.phone,
+            ok: r.ok,
+            message: r.message,
+            count: r.count,
+          });
+        } catch (e: any) {
+          results.push({
+            raw: item.raw,
+            phone: item.phone,
+            ok: false,
+            message: e?.message ?? "付与に失敗しました",
+            count: null,
+          });
+        }
+
+        // 逐次反映（進捗が見える）
+        setBulkRows([...results]);
+      }
+
+      // 在庫も更新（静かに）
+      await fetchStock({ silentMsg: true });
+      setMsg("✅ 一括付与が完了しました");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  function clearBulk() {
+    setBulkText("");
+    setBulkRows([]);
+    setMsg("");
+  }
+
   // ===== ユーザー検索（電話 or コード）=====
   async function searchUser(q?: string, opts?: { silentMsg?: boolean }) {
     const raw = (q ?? query ?? "").trim();
@@ -514,6 +647,20 @@ export default function AdminPage() {
       outline: "none",
       fontSize: 14,
     } as React.CSSProperties,
+    textarea: {
+      width: "100%",
+      padding: "12px 12px",
+      borderRadius: 14,
+      border: "1px solid rgba(148,163,184,0.22)",
+      background: "rgba(2,6,23,0.45)",
+      color: "#e5e7eb",
+      outline: "none",
+      fontSize: 14,
+      minHeight: 120,
+      resize: "vertical",
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+      lineHeight: 1.4,
+    } as React.CSSProperties,
     label: { fontSize: 12, opacity: 0.8, marginBottom: 6 } as React.CSSProperties,
     grid2: {
       display: "grid",
@@ -577,6 +724,8 @@ export default function AdminPage() {
       whiteSpace: "pre-wrap",
     } as React.CSSProperties,
     small: { fontSize: 12, opacity: 0.75 } as React.CSSProperties,
+    ok: { color: "#86efac", fontWeight: 900 } as React.CSSProperties,
+    ng: { color: "#fecaca", fontWeight: 900 } as React.CSSProperties,
   };
 
   const userTicketsUnused = useMemo(() => {
@@ -586,6 +735,13 @@ export default function AdminPage() {
     if (typeof user.tickets?.count === "number") return user.tickets.count;
     return null;
   }, [user]);
+
+  const bulkSummary = useMemo(() => {
+    const total = bulkRows.length;
+    const ok = bulkRows.filter((r) => r.ok).length;
+    const ng = total - ok;
+    return { total, ok, ng };
+  }, [bulkRows]);
 
   return (
     <main style={styles.page}>
@@ -608,7 +764,12 @@ export default function AdminPage() {
         {/* 合言葉 + 在庫 */}
         <div style={styles.card}>
           <div style={styles.label}>管理用合言葉（ADMIN_SECRET）</div>
-          <input style={styles.input} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="合言葉" />
+          <input
+            style={styles.input}
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            placeholder="合言葉"
+          />
 
           <div style={styles.grid4}>
             <div style={styles.stat}>
@@ -651,12 +812,24 @@ export default function AdminPage() {
               <div style={styles.small}>draw_logs から集計（JST基準）</div>
             </div>
 
-            <button style={styles.btnGhost} onClick={() => fetchLogSummary()} disabled={!canOperate || logLoading}>
+            <button
+              style={styles.btnGhost}
+              onClick={() => fetchLogSummary()}
+              disabled={!canOperate || logLoading}
+            >
               {logLoading ? "更新中..." : "集計を更新"}
             </button>
           </div>
 
-          <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              marginTop: 12,
+              flexWrap: "wrap",
+              alignItems: "flex-end",
+            }}
+          >
             <div style={{ minWidth: 240 }}>
               <div style={styles.label}>日付（YYYY-MM-DD）</div>
               <input
@@ -667,7 +840,11 @@ export default function AdminPage() {
               />
             </div>
 
-            <button style={styles.btn} onClick={() => fetchLogSummary()} disabled={!canOperate || logLoading}>
+            <button
+              style={styles.btn}
+              onClick={() => fetchLogSummary()}
+              disabled={!canOperate || logLoading}
+            >
               表示
             </button>
 
@@ -707,7 +884,9 @@ export default function AdminPage() {
         <div style={styles.grid2}>
           {/* 抽選権 */}
           <div style={styles.card}>
-            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>抽選権管理</div>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>
+              抽選権管理
+            </div>
 
             <div style={styles.label}>電話番号</div>
             <input
@@ -721,7 +900,11 @@ export default function AdminPage() {
               <button style={styles.btn} onClick={addTicket} disabled={!canOperate || ticketBusy}>
                 ＋付与
               </button>
-              <button style={styles.btnDanger} onClick={removeTicket} disabled={!canOperate || ticketBusy}>
+              <button
+                style={styles.btnDanger}
+                onClick={removeTicket}
+                disabled={!canOperate || ticketBusy}
+              >
                 取消（-1）
               </button>
               <button
@@ -743,12 +926,97 @@ export default function AdminPage() {
               </div>
             )}
 
-            <div style={{ marginTop: 10, ...styles.small }}>※入力は消えません（連続入力OK）</div>
+            <div style={{ marginTop: 10, ...styles.small }}>
+              ※入力は消えません（連続入力OK）
+            </div>
+
+            {/* ✅ 一括付与（追加） */}
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(148,163,184,0.14)" }}>
+              <div style={{ fontSize: 15, fontWeight: 900, marginBottom: 6 }}>
+                一括付与（＋1）
+              </div>
+              <div style={styles.small}>1行に1人の電話番号（そのまま貼り付けOK）</div>
+
+              <div style={{ marginTop: 10 }}>
+                <textarea
+                  style={styles.textarea}
+                  value={bulkText}
+                  onChange={(e) => setBulkText(e.target.value)}
+                  placeholder={"例:\n09012345678\n08011112222\n07033334444"}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                <button
+                  style={styles.btn}
+                  onClick={bulkAddTickets}
+                  disabled={!canOperate || bulkBusy}
+                  title="一括で＋1付与します"
+                >
+                  {bulkBusy ? "付与中..." : "一括付与（＋1）"}
+                </button>
+                <button style={styles.btnGhost} onClick={clearBulk} disabled={bulkBusy}>
+                  クリア
+                </button>
+
+                {bulkRows.length > 0 && (
+                  <div style={{ ...styles.pill, marginLeft: "auto" }}>
+                    ✅ 成功 <b>{bulkSummary.ok}</b>／❌ 失敗 <b>{bulkSummary.ng}</b>（全<b>{bulkSummary.total}</b>）
+                  </div>
+                )}
+              </div>
+
+              {bulkRows.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <table style={styles.table}>
+                    <thead>
+                      <tr>
+                        <th style={styles.th}>電話番号</th>
+                        <th style={styles.th}>結果</th>
+                        <th style={styles.th}>抽選可能回数</th>
+                        <th style={styles.th}>メモ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkRows.map((r, idx) => (
+                        <tr key={`${r.raw}-${idx}`}>
+                          <td style={styles.td}>
+                            <div style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                              <b>{r.phone ?? "-"}</b>
+                            </div>
+                            <div style={{ ...styles.small, marginTop: 4, opacity: 0.65 }}>
+                              入力: {r.raw}
+                            </div>
+                          </td>
+                          <td style={styles.td}>
+                            <span style={r.ok ? styles.ok : styles.ng}>
+                              {r.ok ? "成功" : "失敗"}
+                            </span>
+                          </td>
+                          <td style={styles.td}>
+                            {r.count === null ? "-" : <b>{r.count}</b>}
+                          </td>
+                          <td style={styles.td}>
+                            <span style={{ opacity: 0.9 }}>{r.message}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <div style={{ marginTop: 10, ...styles.small }}>
+                    ※一括付与は「1件ずつ順番に」実行するので、途中で失敗しても他は続行します
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* ユーザー検索 */}
           <div style={styles.card}>
-            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>ユーザー検索（電話 or コード）</div>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>
+              ユーザー検索（電話 or コード）
+            </div>
 
             <div style={styles.label}>電話番号 or コード</div>
             <input
@@ -762,7 +1030,11 @@ export default function AdminPage() {
             />
 
             <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-              <button style={styles.btn} onClick={() => searchUser()} disabled={!canOperate || searchLoading}>
+              <button
+                style={styles.btn}
+                onClick={() => searchUser()}
+                disabled={!canOperate || searchLoading}
+              >
                 {searchLoading ? "検索中..." : "検索"}
               </button>
               <button
@@ -792,7 +1064,9 @@ export default function AdminPage() {
 
         {/* コード一覧 */}
         <div style={{ ...styles.card, marginTop: 14 }}>
-          <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 8 }}>コード一覧</div>
+          <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 8 }}>
+            コード一覧
+          </div>
           <div style={{ ...styles.small, marginBottom: 10 }}>
             検索するとここに一覧が出ます（assigned は表示せず「未使用/使用済」で表示）
           </div>
@@ -822,7 +1096,9 @@ export default function AdminPage() {
                         </div>
                       </td>
                       <td style={styles.td}>
-                        <div style={{ fontSize: 14, fontWeight: 700 }}>{r.benefit_text ?? ""}</div>
+                        <div style={{ fontSize: 14, fontWeight: 700 }}>
+                          {r.benefit_text ?? ""}
+                        </div>
                       </td>
                       <td style={styles.td}>
                         <span style={styles.pill}>{isUsed ? "✅ 使用済" : "🟦 未使用"}</span>
@@ -850,7 +1126,9 @@ export default function AdminPage() {
             </tbody>
           </table>
 
-          <div style={{ marginTop: 12, ...styles.small }}>※URL：/admin（このページは合言葉がないと操作できません）</div>
+          <div style={{ marginTop: 12, ...styles.small }}>
+            ※URL：/admin（このページは合言葉がないと操作できません）
+          </div>
         </div>
 
         {msg && <div style={styles.msg}>{msg}</div>}
