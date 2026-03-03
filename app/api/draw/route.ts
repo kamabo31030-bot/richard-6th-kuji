@@ -42,11 +42,11 @@ function getAdminClient() {
   });
 }
 
-// ✅ rank列で直接取る（これが今回の修正）
+// ✅ rank列で直接取る（ログ用に rank も取得）
 async function pickOneUnusedCodeByRank(admin: any, rank: Rank) {
   const { data, error } = await admin
     .from("prize_codes")
-    .select("code, benefit_text")
+    .select("code, benefit_text, rank")
     .eq("status", "unused")
     .eq("rank", rank)
     .limit(50);
@@ -66,10 +66,7 @@ export async function POST(req: Request) {
     const phone = normalizePhone(body?.phone);
 
     if (!phone) {
-      return NextResponse.json(
-        { error: "電話番号を入力してください" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "電話番号を入力してください" }, { status: 400 });
     }
 
     const nowIso = new Date().toISOString();
@@ -88,10 +85,7 @@ export async function POST(req: Request) {
     if (tErr) throw tErr;
 
     if (!ticket?.id) {
-      return NextResponse.json(
-        { error: "抽選権がありません" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "抽選権がありません" }, { status: 400 });
     }
 
     // 確率抽選
@@ -136,14 +130,29 @@ export async function POST(req: Request) {
 
     if (useErr) throw useErr;
 
+    // =========================
+    // ✅ 抽選ログ（失敗しても抽選結果は返す）
+    // 前提: draw_logs テーブルに phone/code/rank/benefit_text がある
+    // =========================
+    try {
+      const rankForLog =
+        (typeof chosen?.rank === "string" && chosen.rank) ? String(chosen.rank).toLowerCase() : null;
+
+      await admin.from("draw_logs").insert({
+        phone,
+        code: chosen.code,
+        rank: rankForLog, // "ss" / "s" / "a" / "b"
+        benefit_text: chosen.benefit_text ?? null,
+      });
+    } catch {
+      // ログ失敗は握りつぶす（くじ本体は止めない）
+    }
+
     return NextResponse.json({
       code: chosen.code,
       benefit_text: chosen.benefit_text,
     });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message ?? "サーバーエラー" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message ?? "サーバーエラー" }, { status: 500 });
   }
 }
