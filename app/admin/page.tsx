@@ -39,6 +39,15 @@ type UserInfo = {
   query: string;
 };
 
+type LogSummary = {
+  day: string;
+  ss: number;
+  s: number;
+  a: number;
+  b: number;
+  total: number;
+};
+
 export default function AdminPage() {
   // 合言葉
   const [secret, setSecret] = useState("");
@@ -46,6 +55,11 @@ export default function AdminPage() {
   // 在庫
   const [stock, setStock] = useState<Stock | null>(null);
   const [stockLoading, setStockLoading] = useState(false);
+
+  // ✅ 日別ログ集計
+  const [logDay, setLogDay] = useState("");
+  const [logSum, setLogSum] = useState<LogSummary | null>(null);
+  const [logLoading, setLogLoading] = useState(false);
 
   // 抽選権（付与/取消）
   const [phone, setPhone] = useState("");
@@ -63,6 +77,7 @@ export default function AdminPage() {
   const canOperate = useMemo(() => secret.trim().length > 0, [secret]);
 
   const stockDebounceRef = useRef<number | null>(null);
+  const logDebounceRef = useRef<number | null>(null);
 
   // ✅ ここだけ直した（used_at だけじゃなく status も見る）
   function isUsedRow(row: UserCode) {
@@ -127,6 +142,48 @@ export default function AdminPage() {
     }
   }
 
+  // ===== 日別ログ集計 =====
+  async function fetchLogSummary(opts?: { silentMsg?: boolean }) {
+    if (!canOperate) {
+      setLogSum(null);
+      return;
+    }
+
+    setLogLoading(true);
+    if (!opts?.silentMsg) setMsg("");
+
+    try {
+      const res = await fetch("/api/admin/logs-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          secret,
+          day: (logDay ?? "").trim() || undefined, // 未指定ならAPI側で今日(JST)
+        }),
+      });
+
+      const json = await safeJson(res);
+      if (!res.ok) throw new Error(json?.error ?? "集計の取得に失敗しました");
+
+      const next: LogSummary = {
+        day: String(json?.day ?? ""),
+        ss: Number(json?.ss ?? 0),
+        s: Number(json?.s ?? 0),
+        a: Number(json?.a ?? 0),
+        b: Number(json?.b ?? 0),
+        total: Number(json?.total ?? 0),
+      };
+
+      setLogSum(next);
+      if (!opts?.silentMsg) setMsg("✅ 日別集計を更新しました");
+    } catch (e: any) {
+      setLogSum(null);
+      setMsg(e?.message ?? "集計の取得に失敗しました");
+    } finally {
+      setLogLoading(false);
+    }
+  }
+
   // 合言葉入力で自動的に在庫表示（軽くデバウンス）
   useEffect(() => {
     if (stockDebounceRef.current) window.clearTimeout(stockDebounceRef.current);
@@ -136,6 +193,23 @@ export default function AdminPage() {
 
     return () => {
       if (stockDebounceRef.current) window.clearTimeout(stockDebounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [secret]);
+
+  // ✅ 合言葉入力で日別集計も自動表示（軽くデバウンス）
+  useEffect(() => {
+    if (!canOperate) {
+      setLogSum(null);
+      return;
+    }
+    if (logDebounceRef.current) window.clearTimeout(logDebounceRef.current);
+    logDebounceRef.current = window.setTimeout(() => {
+      fetchLogSummary({ silentMsg: true });
+    }, 350);
+
+    return () => {
+      if (logDebounceRef.current) window.clearTimeout(logDebounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secret]);
@@ -534,12 +608,7 @@ export default function AdminPage() {
         {/* 合言葉 + 在庫 */}
         <div style={styles.card}>
           <div style={styles.label}>管理用合言葉（ADMIN_SECRET）</div>
-          <input
-            style={styles.input}
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            placeholder="合言葉"
-          />
+          <input style={styles.input} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="合言葉" />
 
           <div style={styles.grid4}>
             <div style={styles.stat}>
@@ -566,13 +635,79 @@ export default function AdminPage() {
           </div>
         </div>
 
+        {/* ✅ 日別ログ集計（追加） */}
+        <div style={{ ...styles.card, marginTop: 14 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 900 }}>日別 当選数</div>
+              <div style={styles.small}>draw_logs から集計（JST基準）</div>
+            </div>
+
+            <button style={styles.btnGhost} onClick={() => fetchLogSummary()} disabled={!canOperate || logLoading}>
+              {logLoading ? "更新中..." : "集計を更新"}
+            </button>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style={{ minWidth: 240 }}>
+              <div style={styles.label}>日付（YYYY-MM-DD）</div>
+              <input
+                style={styles.input}
+                value={logDay}
+                onChange={(e) => setLogDay(e.target.value)}
+                placeholder="未入力なら今日"
+              />
+            </div>
+
+            <button style={styles.btn} onClick={() => fetchLogSummary()} disabled={!canOperate || logLoading}>
+              表示
+            </button>
+
+            {logSum?.day && (
+              <div style={{ ...styles.pill, marginLeft: "auto" }}>
+                📅 対象日：<b>{logSum.day}</b>
+              </div>
+            )}
+          </div>
+
+          <div style={styles.grid4}>
+            <div style={styles.stat}>
+              <div style={styles.statLabel}>SS</div>
+              <div style={styles.statValue}>{logSum ? logSum.ss : "-"}</div>
+            </div>
+            <div style={styles.stat}>
+              <div style={styles.statLabel}>S</div>
+              <div style={styles.statValue}>{logSum ? logSum.s : "-"}</div>
+            </div>
+            <div style={styles.stat}>
+              <div style={styles.statLabel}>A</div>
+              <div style={styles.statValue}>{logSum ? logSum.a : "-"}</div>
+            </div>
+            <div style={styles.stat}>
+              <div style={styles.statLabel}>B</div>
+              <div style={styles.statValue}>{logSum ? logSum.b : "-"}</div>
+            </div>
+          </div>
+
+          <div style={{ ...styles.stat, marginTop: 12 }}>
+            <div style={styles.statLabel}>合計</div>
+            <div style={styles.statValue}>{logSum ? logSum.total : "-"}</div>
+          </div>
+        </div>
+
         {/* 操作エリア */}
         <div style={styles.grid2}>
           {/* 抽選権 */}
           <div style={styles.card}>
-            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>
-              抽選権管理
-            </div>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>抽選権管理</div>
 
             <div style={styles.label}>電話番号</div>
             <input
@@ -583,18 +718,10 @@ export default function AdminPage() {
             />
 
             <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-              <button
-                style={styles.btn}
-                onClick={addTicket}
-                disabled={!canOperate || ticketBusy}
-              >
+              <button style={styles.btn} onClick={addTicket} disabled={!canOperate || ticketBusy}>
                 ＋付与
               </button>
-              <button
-                style={styles.btnDanger}
-                onClick={removeTicket}
-                disabled={!canOperate || ticketBusy}
-              >
+              <button style={styles.btnDanger} onClick={removeTicket} disabled={!canOperate || ticketBusy}>
                 取消（-1）
               </button>
               <button
@@ -616,16 +743,12 @@ export default function AdminPage() {
               </div>
             )}
 
-            <div style={{ marginTop: 10, ...styles.small }}>
-              ※入力は消えません（連続入力OK）
-            </div>
+            <div style={{ marginTop: 10, ...styles.small }}>※入力は消えません（連続入力OK）</div>
           </div>
 
           {/* ユーザー検索 */}
           <div style={styles.card}>
-            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>
-              ユーザー検索（電話 or コード）
-            </div>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>ユーザー検索（電話 or コード）</div>
 
             <div style={styles.label}>電話番号 or コード</div>
             <input
@@ -639,11 +762,7 @@ export default function AdminPage() {
             />
 
             <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-              <button
-                style={styles.btn}
-                onClick={() => searchUser()}
-                disabled={!canOperate || searchLoading}
-              >
+              <button style={styles.btn} onClick={() => searchUser()} disabled={!canOperate || searchLoading}>
                 {searchLoading ? "検索中..." : "検索"}
               </button>
               <button
@@ -703,29 +822,17 @@ export default function AdminPage() {
                         </div>
                       </td>
                       <td style={styles.td}>
-                        <div style={{ fontSize: 14, fontWeight: 700 }}>
-                          {r.benefit_text ?? ""}
-                        </div>
+                        <div style={{ fontSize: 14, fontWeight: 700 }}>{r.benefit_text ?? ""}</div>
                       </td>
                       <td style={styles.td}>
-                        <span style={styles.pill}>
-                          {isUsed ? "✅ 使用済" : "🟦 未使用"}
-                        </span>
+                        <span style={styles.pill}>{isUsed ? "✅ 使用済" : "🟦 未使用"}</span>
                       </td>
                       <td style={styles.td}>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <button
-                            style={styles.btn}
-                            onClick={() => markUsed(r.code)}
-                            disabled={!canOperate}
-                          >
+                          <button style={styles.btn} onClick={() => markUsed(r.code)} disabled={!canOperate}>
                             使用済みにする
                           </button>
-                          <button
-                            style={styles.btnGhost}
-                            onClick={() => markUnused(r.code)}
-                            disabled={!canOperate}
-                          >
+                          <button style={styles.btnGhost} onClick={() => markUnused(r.code)} disabled={!canOperate}>
                             未使用に戻す
                           </button>
                         </div>
@@ -743,9 +850,7 @@ export default function AdminPage() {
             </tbody>
           </table>
 
-          <div style={{ marginTop: 12, ...styles.small }}>
-            ※URL：/admin（このページは合言葉がないと操作できません）
-          </div>
+          <div style={{ marginTop: 12, ...styles.small }}>※URL：/admin（このページは合言葉がないと操作できません）</div>
         </div>
 
         {msg && <div style={styles.msg}>{msg}</div>}
