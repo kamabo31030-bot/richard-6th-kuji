@@ -312,7 +312,7 @@ export default function Home() {
               <li>「抽選権を確認」を押す</li>
               <li>抽選権が1回以上なら「くじを引く」</li>
               <li>表示された4文字コードを控える</li>
-              <li>次回予約時に「周年コード：XXXX」と伝える</li>
+              <li>4月1日〜4月30日のご予約時に「周年コード：XXXX」と伝える</li>
             </ol>
           </section>
         </header>
@@ -321,7 +321,7 @@ export default function Home() {
         <section className="card prizeCard" aria-label="景品一覧">
           <div className="sectionHead">
             <h2 className="h2">景品一覧</h2>
-            <div className="sectionHint">有効期限：次回以降〜4月末まで</div>
+            <div className="sectionHint">有効期限：4月1日〜4月30日まで</div>
           </div>
 
           <div className="prizeGrid">
@@ -431,7 +431,7 @@ export default function Home() {
                 </div>
 
                 <div className="noteBox">
-                  <div className="noteTitle">次回予約で伝える内容</div>
+                  <div className="noteTitle">4月中予約で伝える内容</div>
                   <div className="noteText">
                     周年コード：<b>{short(result.code)}</b>
                   </div>
@@ -443,13 +443,13 @@ export default function Home() {
 
         <section className="card">
           <div className="sectionHead">
-            <h2 className="h2">未使用コード（次回予約で伝えてください）</h2>
+            <h2 className="h2">未使用コード（4月中予約で伝えてください）</h2>
             <div className="sectionHint">4文字だけでOK</div>
           </div>
 
           <div className="codeNotice">
             ※コードは当日予約でも利用可能です。<br />
-            ※有効期限は4月末までです。
+            ※有効期限：4月1日〜4月30日
           </div>
 
           {tickets === null ? (
